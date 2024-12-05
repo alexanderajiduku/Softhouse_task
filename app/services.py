@@ -17,30 +17,50 @@ def get_top_winners(csv_path: str = "data/stock_data.csv"):
             - percent (float): The percentage increase in stock price.
             - latest (float): The latest stock price.
     """
-    df = pd.read_csv(csv_path, sep=";", parse_dates=["Date"], encoding="ISO-8859-1")
-    latest_date = df["Date"].dt.date.max()
-    daily_data = df[df["Date"].dt.date == latest_date]
+    try:
+        df = pd.read_csv(csv_path, sep=";", parse_dates=["Date"], encoding="ISO-8859-1")
+    except FileNotFoundError:
+        print(f"Error: The file at path {csv_path} was not found.")
+        return []
+    except pd.errors.ParserError:
+        print("Error: There was a problem parsing the CSV file.")
+        return []
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return []
 
-    percentage_changes = {}
-    latest_prices = {}
+    try:
+        latest_date = df["Date"].dt.date.max()
+        daily_data = df[df["Date"].dt.date == latest_date]
 
-    for kod, group in daily_data.groupby("Kod"):
-        initial_price = group.iloc[0]["Kurs"]
-        latest_price = group.iloc[-1]["Kurs"]
+        percentage_changes = {}
+        latest_prices = {}
 
-        percentage_change = ((latest_price - initial_price) / initial_price) * 100
-        percentage_changes[kod] = percentage_change
-        latest_prices[kod] = latest_price
+        for kod, group in daily_data.groupby("Kod"):
+            initial_price = group.iloc[0]["Kurs"]
+            latest_price = group.iloc[-1]["Kurs"]
 
-    sorted_stocks = sorted(percentage_changes.items(), key=lambda x: x[1], reverse=True)
+            percentage_change = ((latest_price - initial_price) / initial_price) * 100
+            percentage_changes[kod] = percentage_change
+            latest_prices[kod] = latest_price
 
-    top_winners = [
-        StockWinner(
-            rank=rank + 1,
-            name=kod,
-            percent=round(percent, 2),
-            latest=latest_prices[kod],
+        sorted_stocks = sorted(
+            percentage_changes.items(), key=lambda x: x[1], reverse=True
         )
-        for rank, (kod, percent) in enumerate(sorted_stocks[:3])
-    ]
-    return [winner.dict() for winner in top_winners]
+
+        top_winners = [
+            StockWinner(
+                rank=rank + 1,
+                name=kod,
+                percent=round(percent, 2),
+                latest=latest_prices[kod],
+            )
+            for rank, (kod, percent) in enumerate(sorted_stocks[:3])
+        ]
+        return [winner.dict() for winner in top_winners]
+    except KeyError as e:
+        print(f"Error: Missing expected column in the data - {e}")
+        return []
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return []
