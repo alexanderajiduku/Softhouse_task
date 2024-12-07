@@ -1,66 +1,51 @@
-import pandas as pd
+import csv
+from datetime import datetime
+from collections import defaultdict
 from app.models import StockWinner
 
 
 def get_top_winners(csv_path: str = "data/stock_data.csv"):
-    """
-    Reads stock data from a CSV file, calculates the percentage change in stock prices for the latest date,
-    and returns the top 3 stocks with the highest percentage increase.
-
-    Args:
-        csv_path (str): The file path to the CSV file containing stock data. Defaults to "data/stock_data.csv".
-
-    Returns:
-        List[dict]: A list of dictionaries, each representing a top winning stock with the following keys:
-            - rank (int): The rank of the stock based on percentage increase.
-            - name (str): The stock code.
-            - percent (float): The percentage increase in stock price.
-            - latest (float): The latest stock price.
-    """
     try:
-        df = pd.read_csv(csv_path, sep=";", parse_dates=["Date"], encoding="ISO-8859-1")
-    except FileNotFoundError:
-        print(f"Error: The file at path {csv_path} was not found.")
-        return []
-    except pd.errors.ParserError:
-        print("Error: There was a problem parsing the CSV file.")
-        return []
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        return []
-
-    try:
-        latest_date = df["Date"].dt.date.max()
-        daily_data = df[df["Date"].dt.date == latest_date]
-
-        percentage_changes = {}
-        latest_prices = {}
-
-        for kod, group in daily_data.groupby("Kod"):
-            initial_price = group.iloc[0]["Kurs"]
-            latest_price = group.iloc[-1]["Kurs"]
-
-            percentage_change = ((latest_price - initial_price) / initial_price) * 100
-            percentage_changes[kod] = percentage_change
-            latest_prices[kod] = latest_price
-
-        sorted_stocks = sorted(
-            percentage_changes.items(), key=lambda x: x[1], reverse=True
-        )
-
-        top_winners = [
-            StockWinner(
-                rank=rank + 1,
-                name=kod,
-                percent=round(percent, 2),
-                latest=latest_prices[kod],
+        stock_data = defaultdict(lambda: defaultdict(float))
+        dates = set()
+        
+        with open(csv_path, 'r', encoding='ISO-8859-1') as csv_data:
+            reader = csv.reader(csv_data, delimiter=';')
+            next(reader)  # Skip header
+            for row in reader:
+                date = datetime.strptime(row[0], '%Y-%m-%d %H:%M:%S').date()
+                code = row[1]
+                price = float(row[2])
+                stock_data[code][date] = price
+                dates.add(date)
+        
+        latest_date = max(dates)
+        
+        price_changes = {}
+        for code, prices in stock_data.items():
+            if latest_date in prices and len(prices) > 1:
+                previous_date = max(date for date in prices.keys() if date < latest_date)
+                previous_price = prices[previous_date]
+                latest_price = prices[latest_date]
+                price_change = (latest_price - previous_price) / previous_price * 100
+                price_changes[code] = (price_change, latest_price)
+        
+        top_3 = sorted(price_changes.items(), key=lambda x: x[1][0], reverse=True)[:3]
+        
+        results = []
+        for rank, (code, (increase_percentage, latest_price)) in enumerate(top_3, 1):
+            winner = StockWinner(
+                rank=rank,
+                name=code,
+                percent=round(increase_percentage, 2),
+                latest=round(latest_price, 2)
             )
-            for rank, (kod, percent) in enumerate(sorted_stocks[:3])
-        ]
-        return [winner.dict() for winner in top_winners]
-    except KeyError as e:
-        print(f"Error: Missing expected column in the data - {e}")
+            results.append(winner.dict())
+        
+        return results
+    except FileNotFoundError:
+        print(f"CSV file not found: {csv_path}")
         return []
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        print(f"Error processing stock data: {str(e)}")
         return []
